@@ -12,7 +12,7 @@
 
 # testing
 /coverage
-/wasm/pkg
+# /wasm/pkg
 /wasm/target/wasm32-unknown-unknown/release/*.wasm
 /wasm/target/*
 /wasm/target/
