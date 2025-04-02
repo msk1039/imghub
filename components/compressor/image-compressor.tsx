@@ -1,6 +1,6 @@
 "use client";
-import { toast } from 'sonner';
 import { useState, useEffect } from "react";
+import { toast } from 'sonner';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
+import { motion } from "framer-motion";
 import { 
   UploadCloud, 
   Download, 
@@ -19,11 +20,9 @@ import {
   X,
   CheckCircle2,
   XCircle,
-  Loader2  
+  Loader2,
+  ArrowRight
 } from "lucide-react";
-// import { Skeleton } from "@/components/ui/skeleton";
-import JSZip from 'jszip';
-import { saveAs } from 'file-saver';
 
 // These are the formats that support compression
 const SUPPORTED_FORMATS = [
@@ -49,7 +48,13 @@ interface CompressedImage {
   compressedSize: number;
 }
 
+const fadeInUp = {
+  hidden: { opacity: 0, y: 20 },
+  visible: { opacity: 1, y: 0 }
+};
+
 export default function ImageCompressor() {
+  const [isClient, setIsClient] = useState(false);
   const [selectedImages, setSelectedImages] = useState<SelectedImage[]>([]);
   const [targetFormat, setTargetFormat] = useState<string>("jpg");
   const [compressedImages, setCompressedImages] = useState<CompressedImage[]>([]);
@@ -57,7 +62,8 @@ export default function ImageCompressor() {
   const [isLoading, setIsLoading] = useState(false);
   const [wasmLoaded, setWasmLoaded] = useState(false);
   const [wasmModule, setWasmModule] = useState<any>(null);
-
+  const [isDragging, setIsDragging] = useState(false);
+  
   // Load WASM module
   useEffect(() => {
     async function loadWasm() {
@@ -82,6 +88,11 @@ export default function ImageCompressor() {
       });
     };
   }, [selectedImages]);
+
+  // Set isClient to true after component mounts
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   const formatFileSize = (bytes: number): string => {
     if (bytes === 0) return '0 Bytes';
@@ -126,6 +137,7 @@ export default function ImageCompressor() {
     if (selectedImages.length === 0 || !wasmLoaded || !wasmModule) return;
 
     setIsLoading(true);
+    toast.info(`Compressing ${selectedImages.length} images with quality: ${quality}%...`);
 
     // Initialize compression states for all images
     setCompressedImages(selectedImages.map(img => ({
@@ -179,40 +191,40 @@ export default function ImageCompressor() {
     }
 
     setIsLoading(false);
+    const successCount = compressedImages.filter(img => img.status === 'completed').length;
+    toast.success(`Compressed ${successCount} of ${selectedImages.length} images successfully!`);
   };
 
   const handleDownloadZip = async () => {
     const successfulCompressions = compressedImages.filter(img => img.status === 'completed');
-    if (successfulCompressions.length === 0) return;
+    if (successfulCompressions.length === 0 || !isClient) return;
     
-    const zip = new JSZip();
-    
-    // Add each compressed image to the zip
-    successfulCompressions.forEach(image => {
-      // Get base filename without extension
-      const baseName = image.originalName.replace(/\.[^/.]+$/, "");
-      const fileName = `${baseName}.${image.format}`;
-      zip.file(fileName, image.data);
-    });
-    
-    // Generate and download the zip file
-    const content = await zip.generateAsync({ type: 'blob' });
-    
-    saveAs(content, `compressed-images-${quality}%.zip`);
-
-    // Show toast notification after the zip is created and download starts
-    toast.promise(
-      // This will resolve when the zip is created and file download starts
-      new Promise<void>((resolve) => {
-        // Small delay to ensure download has started
-        setTimeout(() => resolve(), 500);
-      }),
-      {
-        loading: 'Creating ZIP file...',
-        success: 'ZIP file downloaded successfully!',
-        error: 'Failed to create ZIP file'
-      }
-    );
+    try {
+      toast.info("Creating ZIP file...");
+      
+      // Dynamic imports inside the function where they're used
+      const JSZip = (await import('jszip')).default;
+      const { saveAs } = await import('file-saver');
+      
+      const zip = new JSZip();
+      
+      // Add each compressed image to the zip
+      successfulCompressions.forEach(image => {
+        // Get base filename without extension
+        const baseName = image.originalName.replace(/\.[^/.]+$/, "");
+        const fileName = `${baseName}.${image.format}`;
+        zip.file(fileName, image.data);
+      });
+      
+      // Generate and download the zip file
+      const content = await zip.generateAsync({ type: 'blob' });
+      saveAs(content, `compressed-images-${quality}%.zip`);
+      
+      toast.success("ZIP file downloaded successfully!");
+    } catch (error) {
+      console.error("Error creating ZIP file:", error);
+      toast.error("Failed to create ZIP file.");
+    }
   };
 
   // Calculate total compression stats
@@ -225,230 +237,326 @@ export default function ImageCompressor() {
     ? Math.round((1 - (totalCompressedSize / totalOriginalSize)) * 100) 
     : 0;
 
+  const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+  
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+  
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    
+    const files = e.dataTransfer.files;
+    if (!files || files.length === 0) return;
+    
+    const imageFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
+    if (imageFiles.length === 0) {
+      toast.error("Please drop only image files");
+      return;
+    }
+    
+    // Create a simulated file input event
+    const fileList = imageFiles as unknown as FileList;
+    const event = { target: { files: fileList } } as React.ChangeEvent<HTMLInputElement>;
+    handleFileChange(event);
+  };
+
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-bold">Batch Image Compressor</h1>
+    <motion.div 
+      className="flex flex-col gap-8"
+      initial="hidden"
+      animate="visible"
+      variants={{
+        hidden: { opacity: 0 },
+        visible: {
+          opacity: 1,
+          transition: {
+            staggerChildren: 0.1
+          }
+        }
+      }}
+    >
+      <motion.div variants={fadeInUp} className="flex flex-col gap-2">
+        <h1 className="text-3xl font-bold">
+          <span className="gradient-text">Image Compressor</span>
+        </h1>
         <p className="text-muted-foreground">
-          Compress multiple images while maintaining quality
+          Compress multiple images while maintaining quality with our intelligent algorithms
         </p>
-      </div>
+      </motion.div>
 
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-8 md:grid-cols-2">
         {/* Upload Section */}
-        <Card className="overflow-hidden">
-          <CardContent className="p-6">
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="image-upload-compress">Upload Images</Label>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
+        <motion.div variants={fadeInUp}>
+          <Card className="overflow-hidden border-border/50 shadow-lg hover:shadow-xl transition-shadow">
+            <CardContent className="p-6">
+              <div className="flex flex-col gap-6">
+                <div className="flex flex-col gap-3">
+                  <Label htmlFor="image-upload-compress" className="text-lg font-medium">Upload Images</Label>
+                  <div 
+                    className={`border-2 border-dashed ${isDragging ? 'border-primary' : 'border-border'} rounded-xl p-8 text-center cursor-pointer hover:border-primary/50 transition-colors`}
                     onClick={() => document.getElementById('image-upload-compress')?.click()}
-                    className="w-full"
+                    onDragEnter={handleDragEnter}
+                    onDragLeave={handleDragLeave}
+                    onDragOver={handleDragOver}
+                    onDrop={handleDrop}
                   >
-                    <UploadCloud className="mr-2 h-4 w-4" />
-                    Select Images
-                  </Button>
-                  <input
-                    id="image-upload-compress"
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={handleFileChange}
-                    className="hidden"
+                    <div className="flex flex-col items-center gap-3">
+                      <div className={`p-3 rounded-full ${isDragging ? 'bg-primary/20' : 'bg-primary/10'} transition-colors`}>
+                        <UploadCloud className="h-8 w-8 text-primary" />
+                      </div>
+                      <div>
+                        <p className="font-medium">
+                          {isDragging ? 'Drop images here' : 'Click to upload or drag and drop'}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          Support for JPG, PNG, and WebP formats
+                        </p>
+                      </div>
+                      <Button 
+                        variant="outline" 
+                        className="mt-2 rounded-md border-primary/60 text-primary hover:bg-primary hover:text-white"
+                      >
+                        Select files
+                      </Button>
+                    </div>
+                    <input
+                      id="image-upload-compress"
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-3">
+                  <Label htmlFor="format-select-compress" className="text-lg font-medium">Target Format</Label>
+                  <Select
+                    value={targetFormat}
+                    onValueChange={setTargetFormat}
+                    disabled={selectedImages.length === 0 || isLoading}
+                  >
+                    <SelectTrigger id="format-select-compress" className="rounded-md w-full h-12">
+                      <SelectValue placeholder="Select a format" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SUPPORTED_FORMATS.map((format) => (
+                        <SelectItem key={format.value} value={format.value}>
+                          {format.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex flex-col gap-3">
+                  <div className="flex justify-between items-center">
+                    <Label htmlFor="quality-slider" className="text-lg font-medium">Quality: {quality}%</Label>
+                  </div>
+                  <Slider
+                    id="quality-slider"
+                    min={1}
+                    max={100}
+                    step={1}
+                    value={[quality]}
+                    onValueChange={(value) => setQuality(value[0])}
+                    disabled={selectedImages.length === 0 || isLoading}
+                    className="py-4"
                   />
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>Smaller file</span>
+                    <span>Better quality</span>
+                  </div>
                 </div>
-              </div>
 
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="format-select-compress">Target Format</Label>
-                <Select
-                  value={targetFormat}
-                  onValueChange={setTargetFormat}
-                  disabled={selectedImages.length === 0 || isLoading}
+                <Button
+                  onClick={handleCompressAll}
+                  disabled={selectedImages.length === 0 || !wasmLoaded || isLoading}
+                  className="mt-2 bg-gradient-to-b h-10 text-md from-[#353f5b] to-[#232a40] hover:shadow-[0_5px_10px_rgba(109,120,161,0.6)] transition-all duration-200"
                 >
-                  <SelectTrigger id="format-select-compress">
-                    <SelectValue placeholder="Select a format" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SUPPORTED_FORMATS.map((format) => (
-                      <SelectItem key={format.value} value={format.value}>
-                        {format.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                      Compressing...
+                    </>
+                  ) : (
+                    <>
+                      Compress {selectedImages.length} {selectedImages.length === 1 ? 'Image' : 'Images'}
+                      <ArrowRight className="ml-2 h-4 w-4" />
+                    </>
+                  )}
+                </Button>
               </div>
 
-              <div className="flex flex-col gap-2">
-                <div className="flex justify-between">
-                  <Label htmlFor="quality-slider">Quality: {quality}%</Label>
-                </div>
-                <Slider
-                  id="quality-slider"
-                  min={1}
-                  max={100}
-                  step={1}
-                  value={[quality]}
-                  onValueChange={(value) => setQuality(value[0])}
-                  disabled={selectedImages.length === 0 || isLoading}
-                  className="py-4"
-                />
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>Smaller file</span>
-                  <span>Better quality</span>
-                </div>
-              </div>
-
-              <Button
-                onClick={handleCompressAll}
-                disabled={selectedImages.length === 0 || !wasmLoaded || isLoading}
-                className="mt-2"
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Compressing...
-                  </>
-                ) : (
-                  `Compress ${selectedImages.length} ${selectedImages.length === 1 ? 'Image' : 'Images'}`
-                )}
-              </Button>
-            </div>
-
-            {selectedImages.length > 0 && (
-              <div className="mt-6">
-                <h3 className="text-sm font-medium mb-2">Selected Images ({selectedImages.length})</h3>
-                <div className="max-h-[400px] overflow-y-auto pr-1">
-                  {selectedImages.map((image) => (
-                    <div key={image.id} className="flex items-center justify-between p-2 border rounded-md mb-2">
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 bg-muted rounded-md overflow-hidden flex-shrink-0">
+              {selectedImages.length > 0 && (
+                <div className="mt-8">
+                  <h3 className="text-lg font-medium mb-3">Selected Images ({selectedImages.length})</h3>
+                  <div className="max-h-[400px] overflow-y-auto pr-1 space-y-3">
+                    {selectedImages.map((image) => (
+                      <motion.div 
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        key={image.id} 
+                        className="flex items-center p-3 bg-background/50 backdrop-blur-sm rounded-xl border border-border/40"
+                      >
+                        <div className="h-12 w-12 bg-muted rounded-lg overflow-hidden flex-shrink-0 mr-3">
                           <img
                             src={image.previewUrl}
                             alt={image.file.name}
                             className="h-full w-full object-cover"
                           />
                         </div>
-                        <div className="overflow-hidden">
-                          <p className="text-sm font-medium truncate" title={image.file.name}>
+                        <div className="overflow-hidden flex-1 min-w-0">
+                          <p className="font-medium truncate" title={image.file.name}>
                             {image.file.name}
                           </p>
                           <p className="text-xs text-muted-foreground">
                             {getFileType(image.file)} • {formatFileSize(image.file.size)}
                           </p>
                         </div>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0"
-                        onClick={() => removeImage(image.id)}
-                        disabled={isLoading}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 rounded-full text-muted-foreground hover:text-destructive flex-shrink-0 ml-2"
+                          onClick={() => removeImage(image.id)}
+                          disabled={isLoading}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </motion.div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
 
         {/* Result Section */}
-        <Card className="overflow-hidden">
-          <CardContent className="p-6">
-            <div className="flex flex-col gap-4">
-              <div>
-                <h3 className="font-medium">Compressed Images</h3>
-                <p className="text-sm text-muted-foreground">
-                  {compressedImages.length === 0
-                    ? "Your compressed images will appear here"
-                    : `${compressedImages.filter(img => img.status === 'completed').length} of ${compressedImages.length} images compressed to ${targetFormat.toUpperCase()}`}
-                </p>
-              </div>
-
-              {totalCompressionRatio > 0 && (
-                <div className="bg-muted p-3 rounded-md text-sm">
-                  <div className="flex justify-between mb-1">
-                    <span>Total compression ratio:</span> 
-                    <span className="font-medium">
-                      {totalCompressionRatio}% smaller
-                    </span>
-                  </div>
-                  <div className="w-full bg-secondary rounded-full h-2 overflow-hidden">
-                    <div 
-                      className="bg-primary h-full" 
-                      style={{ width: `${totalCompressionRatio}%` }}
-                    ></div>
-                  </div>
-                  <div className="flex justify-between mt-2 text-xs">
-                    <span>Original: {formatFileSize(totalOriginalSize)}</span>
-                    <span>Compressed: {formatFileSize(totalCompressedSize)}</span>
-                  </div>
+        <motion.div variants={fadeInUp}>
+          <Card className="overflow-hidden border-border/50 shadow-lg hover:shadow-xl transition-shadow h-full">
+            <CardContent className="p-6">
+              <div className="flex flex-col gap-6 h-full">
+                <div>
+                  <h3 className="text-lg font-medium">Compressed Images</h3>
+                  <p className="text-muted-foreground mt-1">
+                    {compressedImages.length === 0
+                      ? "Your compressed images will appear here"
+                      : `${compressedImages.filter(img => img.status === 'completed').length} of ${compressedImages.length} images compressed to ${targetFormat.toUpperCase()}`}
+                  </p>
                 </div>
-              )}
 
-              {compressedImages.length > 0 && compressedImages.some(img => img.status === 'completed') && (
-                <Button onClick={handleDownloadZip} className="gap-2" disabled={isLoading}>
-                  <Download className="h-4 w-4" />
-                  Download All as ZIP
-                </Button>
-              )}
-            </div>
+                {totalCompressionRatio > 0 && (
+                  <div className="bg-background/50 p-4 rounded-xl border border-border/40 backdrop-blur-sm">
+                    <div className="flex justify-between mb-2">
+                      <span className="text-sm">Total compression ratio:</span> 
+                      <span className="font-medium text-sm">
+                        {totalCompressionRatio}% smaller
+                      </span>
+                    </div>
+                    <div className="w-full bg-secondary rounded-full h-2 overflow-hidden">
+                      <motion.div 
+                        initial={{ width: 0 }}
+                        animate={{ width: `${totalCompressionRatio}%` }}
+                        transition={{ duration: 1, delay: 0.2 }}
+                        className="bg-gradient-to-r from-primary to-blue-500 h-full" 
+                      ></motion.div>
+                    </div>
+                    <div className="flex justify-between mt-2 text-xs text-muted-foreground">
+                      <span>Original: {formatFileSize(totalOriginalSize)}</span>
+                      <span>Compressed: {formatFileSize(totalCompressedSize)}</span>
+                    </div>
+                  </div>
+                )}
 
-            {compressedImages.length > 0 && (
-              <div className="mt-4 max-h-[500px] overflow-y-auto pr-1">
-                {compressedImages.map((image) => (
-                  <div key={image.id} className="flex items-center p-2 border rounded-md mb-2">
-                    <div className="flex-1 flex items-center gap-3">
-                      <div className="h-8 w-8 flex items-center justify-center flex-shrink-0">
-                        {image.status === 'pending' && (
-                          <div className="h-2 w-2 bg-muted-foreground rounded-full animate-pulse"></div>
-                        )}
-                        {image.status === 'compressing' && (
-                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                        )}
-                        {image.status === 'completed' && (
-                          <CheckCircle2 className="h-5 w-5 text-green-500" />
-                        )}
-                        {image.status === 'failed' && (
-                          <XCircle className="h-5 w-5 text-red-500" />
-                        )}
+                {compressedImages.length > 0 && compressedImages.some(img => img.status === 'completed') && (
+                  <Button 
+                    onClick={handleDownloadZip} 
+                    className="mt-2 bg-gradient-to-b h-10 text-md from-[#353f5b] to-[#232a40] hover:shadow-[0_5px_10px_rgba(109,120,161,0.6)] transition-all duration-200" 
+                    disabled={isLoading}
+                  >
+                    <Download className="h-4 w-4" />
+                    Download All as ZIP
+                  </Button>
+                )}
+
+                {compressedImages.length > 0 ? (
+                  <div className="mt-2 max-h-[500px] overflow-y-auto pr-1 space-y-3 flex-grow">
+                    {compressedImages.map((image) => (
+                      <motion.div 
+                        key={image.id} 
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        className="flex items-center p-3 bg-background/50 backdrop-blur-sm rounded-xl border border-border/40"
+                      >
+                        <div className="flex-1 flex items-center gap-3">
+                          <div className="h-10 w-10 flex items-center justify-center flex-shrink-0 bg-muted/30 rounded-lg">
+                            {image.status === 'pending' && (
+                              <div className="h-3 w-3 bg-muted-foreground rounded-full animate-pulse"></div>
+                            )}
+                            {image.status === 'compressing' && (
+                              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                            )}
+                            {image.status === 'completed' && (
+                              <CheckCircle2 className="h-5 w-5 text-green-500" />
+                            )}
+                            {image.status === 'failed' && (
+                              <XCircle className="h-5 w-5 text-destructive" />
+                            )}
+                          </div>
+                          <div className="overflow-hidden">
+                            <p className="font-medium truncate" title={image.originalName}>
+                              {image.originalName}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {image.status === 'completed' 
+                                ? `${formatFileSize(image.originalSize)} → ${formatFileSize(image.compressedSize)} (${Math.round((1 - (image.compressedSize / image.originalSize)) * 100)}% smaller)` 
+                                : image.status === 'failed'
+                                ? image.error || "Compression failed"
+                                : image.status === 'compressing'
+                                ? "Compressing..."
+                                : "Pending..."}
+                            </p>
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-1 items-center justify-center text-muted-foreground">
+                    <div className="flex flex-col items-center gap-4 py-12">
+                      <div className="p-5 rounded-full bg-muted/50">
+                        <FileImage className="h-12 w-12 opacity-30" />
                       </div>
-                      <div className="overflow-hidden">
-                        <p className="text-sm font-medium truncate" title={image.originalName}>
-                          {image.originalName}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {image.status === 'completed' 
-                            ? `${formatFileSize(image.originalSize)} → ${formatFileSize(image.compressedSize)} (${Math.round((1 - (image.compressedSize / image.originalSize)) * 100)}% smaller)` 
-                            : image.status === 'failed'
-                            ? image.error || "Compression failed"
-                            : image.status === 'compressing'
-                            ? "Compressing..."
-                            : "Pending..."}
+                      <div className="text-center">
+                        <p className="font-medium">No compressed images yet</p>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Upload and compress your images to see results here
                         </p>
                       </div>
                     </div>
                   </div>
-                ))}
+                )}
               </div>
-            )}
-
-            {!compressedImages.length && (
-              <div className="flex h-[200px] items-center justify-center text-muted-foreground mt-4">
-                <div className="flex flex-col items-center">
-                  <FileImage className="h-12 w-12 opacity-20 mb-2" />
-                  <p className="text-sm">No compressed images yet</p>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </motion.div>
       </div>
-    </div>
+    </motion.div>
   );
 }
