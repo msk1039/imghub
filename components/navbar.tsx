@@ -24,7 +24,7 @@ export function Navbar({ activeTab, setActiveTab }: NavbarProps) {
       <div className="container max-w-5xl mx-auto py-4 px-4 md:px-8">
         <div className="flex items-center justify-between">
           <Link href="/" className="font-bold text-2xl flex items-center">
-            <span className="gradient-text">imghub</span>
+            <span className="gradient-text text-3xl">imagely</span>
           </Link>
           
           {/* Desktop Navigation */}

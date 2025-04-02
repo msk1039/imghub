@@ -196,7 +196,7 @@ export default function Home() {
       <footer className="py-6 border-t">
         <div className="container max-w-5xl mx-auto px-4 flex flex-col md:flex-row justify-between items-center">
           <p className="text-sm text-muted-foreground mb-4 md:mb-0">
-            <span className="font-medium gradient-text">imghub</span> - Universal image converter and compressor
+            <span className="font-medium gradient-text">imagely</span> - Universal image converter and compressor
           </p>
           <div className="flex gap-4">
             <a href="#" className="text-sm text-muted-foreground hover:text-foreground">Privacy Policy</a>
