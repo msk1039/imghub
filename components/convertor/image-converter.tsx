@@ -283,11 +283,12 @@ export default function ImageConverter() {
     try {
       toast.info("Creating ZIP file...");
       
-      // Dynamic imports inside the function where they're used
-      const JSZip = (await import('jszip')).default;
-      const { saveAs } = await import('file-saver');
+      // Different approach to importing JSZip and file-saver
+      const JSZipModule = await import('jszip');
+      const FileSaverModule = await import('file-saver');
       
-      const zip = new JSZip();
+      // Create a new instance of JSZip
+      const zip = new JSZipModule.default();
       
       // Add each converted image to the zip
       successfulConversions.forEach(image => {
@@ -299,7 +300,7 @@ export default function ImageConverter() {
       
       // Generate and download the zip file
       const content = await zip.generateAsync({ type: 'blob' });
-      saveAs(content, `converted-images-${targetFormat}.zip`);
+      FileSaverModule.saveAs(content, `converted-images-${targetFormat}.zip`);
       
       toast.success("ZIP file downloaded successfully!");
     } catch (error) {
