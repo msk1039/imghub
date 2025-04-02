@@ -12,14 +12,15 @@
 
 # testing
 /coverage
-# /wasm/pkg
-/wasm/target/wasm32-unknown-unknown/release/*.wasm
-/wasm/target/*
-/wasm/target/
+
+
+
 # next.js
 /.next/
 /out/
 
+
+/wasm/target/
 # production
 /build
 

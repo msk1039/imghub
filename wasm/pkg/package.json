@@ -1,0 +1,15 @@
+{
+  "name": "tax-webassembly",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "tax_webassembly_bg.wasm",
+    "tax_webassembly.js",
+    "tax_webassembly.d.ts"
+  ],
+  "main": "tax_webassembly.js",
+  "types": "tax_webassembly.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
