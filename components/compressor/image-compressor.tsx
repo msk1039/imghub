@@ -202,11 +202,10 @@ export default function ImageCompressor() {
     try {
       toast.info("Creating ZIP file...");
       
-      // Different approach to importing JSZip and file-saver
+      // Import directly as named export
       const JSZipModule = await import('jszip');
-      const FileSaverModule = await import('file-saver');
+      const { saveAs } = await import('file-saver');
       
-      // Create a new instance of JSZip
       const zip = new JSZipModule.default();
       
       // Add each compressed image to the zip
@@ -219,7 +218,7 @@ export default function ImageCompressor() {
       
       // Generate and download the zip file
       const content = await zip.generateAsync({ type: 'blob' });
-      FileSaverModule.saveAs(content, `compressed-images-${quality}%.zip`);
+      saveAs(content, `compressed-images-${quality}%.zip`);
       
       toast.success("ZIP file downloaded successfully!");
     } catch (error) {
