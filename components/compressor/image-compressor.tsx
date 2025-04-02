@@ -195,18 +195,45 @@ export default function ImageCompressor() {
     toast.success(`Compressed ${successCount} of ${selectedImages.length} images successfully!`);
   };
 
-  const handleDownloadZip = async () => {
+  const handleDownloadImages = async () => {
     const successfulCompressions = compressedImages.filter(img => img.status === 'completed');
     if (successfulCompressions.length === 0 || !isClient) return;
     
     try {
+      // For single image download
+      if (successfulCompressions.length === 1) {
+        const image = successfulCompressions[0];
+        const blob = new Blob([image.data], { type: `image/${image.format}` });
+        
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        
+        // Get base filename without extension
+        const baseName = image.originalName.replace(/\.[^/.]+$/, "");
+        const fileName = `${baseName}.${image.format}`;
+        
+        link.setAttribute("download", fileName);
+        document.body.appendChild(link);
+        link.click();
+        
+        // Clean up
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+        
+        toast.success("Image downloaded successfully!");
+        return;
+      }
+      
+      // For multiple images, use JSZip but handle it directly in the browser
       toast.info("Creating ZIP file...");
       
-      // Import directly as named export
+      // Dynamic import JSZip only when needed
       const JSZipModule = await import('jszip');
-      const { saveAs } = await import('file-saver');
+      const JSZip = JSZipModule.default;
       
-      const zip = new JSZipModule.default();
+      // Create a new instance
+      const zip = new JSZip();
       
       // Add each compressed image to the zip
       successfulCompressions.forEach(image => {
@@ -216,14 +243,29 @@ export default function ImageCompressor() {
         zip.file(fileName, image.data);
       });
       
-      // Generate and download the zip file
-      const content = await zip.generateAsync({ type: 'blob' });
-      saveAs(content, `compressed-images-${quality}%.zip`);
+      // Generate the zip file content directly
+      const content = await zip.generateAsync({ 
+        type: 'blob',
+        compression: 'DEFLATE',
+        compressionOptions: { level: 6 }
+      });
+      
+      // Create download link
+      const url = URL.createObjectURL(content);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `compressed-images-${quality}%.zip`);
+      document.body.appendChild(link);
+      link.click();
+      
+      // Clean up
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
       
       toast.success("ZIP file downloaded successfully!");
     } catch (error) {
-      console.error("Error creating ZIP file:", error);
-      toast.error("Failed to create ZIP file.");
+      console.error("Error downloading images:", error);
+      toast.error("Failed to download images.");
     }
   };
 
@@ -486,12 +528,12 @@ export default function ImageCompressor() {
 
                 {compressedImages.length > 0 && compressedImages.some(img => img.status === 'completed') && (
                   <Button 
-                    onClick={handleDownloadZip} 
+                    onClick={handleDownloadImages} 
                     className="mt-2 bg-gradient-to-b h-10 text-md from-[#353f5b] to-[#232a40] hover:shadow-[0_5px_10px_rgba(109,120,161,0.6)] transition-all duration-200" 
                     disabled={isLoading}
                   >
-                    <Download className="h-4 w-4" />
-                    Download All as ZIP
+                    <Download className="h-4 w-4 mr-2" />
+                    Download {compressedImages.filter(img => img.status === 'completed').length === 1 ? 'Image' : 'All as ZIP'}
                   </Button>
                 )}
 
